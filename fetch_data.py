@@ -23,8 +23,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "data", "stocks.csv")
 OUT_PATH = os.path.join(BASE_DIR, "data", "corr_data.json")
 
-MIN_DAYS   = max(20, int(TARGET_DAYS * 0.80))   # must have >=80% of target days
-FETCH_DAYS = max(540, TARGET_DAYS * 3)           # calendar days to fetch
+MIN_DAYS   = max(20, int(TARGET_DAYS * 0.80))
+FETCH_DAYS = max(540, TARGET_DAYS * 3)
 
 print(f"Target period : {TARGET_DAYS} trading days")
 print(f"Min days      : {MIN_DAYS}")
@@ -55,9 +55,15 @@ else:
     print(f"ERROR: CSV must have columns 'Symbol'+'Industry' or 'stock'+'sector'. Found: {list(df.columns)}", file=sys.stderr)
     sys.exit(1)
 
-stocks  = df[["Company Name","Industry","Symbol"]].dropna().drop_duplicates(subset="Symbol").to_dict("records")
-tickers = [s["Symbol"] + ".NS" for s in stocks]
-print(f"Loaded {len(stocks)} unique stocks from CSV")
+# ── IMPORTANT: keep all (Symbol, Industry) pairs — a stock can belong to
+#    multiple indices. Deduplicate only exact duplicate rows.
+df = df[["Company Name","Industry","Symbol"]].dropna()
+df = df.drop_duplicates(subset=["Symbol","Industry"])   # remove exact dupes only
+
+# Build unique ticker list for price download (each ticker downloaded once)
+unique_symbols = df["Symbol"].unique().tolist()
+tickers        = [s + ".NS" for s in unique_symbols]
+print(f"Loaded {len(df)} stock-industry rows, {len(unique_symbols)} unique symbols from CSV")
 
 # ── fetch prices ─────────────────────────────────────────────────────────────
 end   = datetime.today()
@@ -82,12 +88,11 @@ else:
 
 print(f"Raw price shape: {close.shape}")
 
-# ── identify the TARGET_DAYS most-recent trading dates ───────────────────────
+# ── identify TARGET_DAYS most-recent trading dates ───────────────────────────
 trading_dates = close.index[close.notna().sum(axis=1) >= 10]
 if len(trading_dates) < TARGET_DAYS:
     raise ValueError(
-        f"Only {len(trading_dates)} common trading dates found, need {TARGET_DAYS}. "
-        f"Try a smaller period or check network access."
+        f"Only {len(trading_dates)} common trading dates found, need {TARGET_DAYS}."
     )
 
 last_n_dates = trading_dates[-TARGET_DAYS:]
@@ -99,32 +104,56 @@ valid_cols = close_n.columns[close_n.notna().sum() >= MIN_DAYS]
 close_n    = close_n[valid_cols]
 print(f"Stocks with >= {MIN_DAYS} days of data: {len(valid_cols)}")
 
-# ── forward-fill up to 3 days ─────────────────────────────────────────────────
 close_n = close_n.ffill(limit=3)
 
 # ── log returns ───────────────────────────────────────────────────────────────
 returns = np.log(close_n / close_n.shift(1)).iloc[1:]
 print(f"Returns matrix: {returns.shape}")
 
-# ── correlation matrix ────────────────────────────────────────────────────────
+# ── correlation matrix (unique symbols only) ──────────────────────────────────
 min_p = max(20, int(TARGET_DAYS * 0.4))
 corr  = returns.corr(min_periods=min_p)
-available_tickers = list(corr.columns)
+
+available_tickers = list(corr.columns)          # e.g. "TCS.NS"
 available_syms    = [t.replace(".NS", "") for t in available_tickers]
+available_sym_set = set(available_syms)
 N                 = len(available_syms)
 print(f"Correlation matrix: {N} x {N}")
 
-# ── stock metadata ────────────────────────────────────────────────────────────
-sym_to_meta  = {s["Symbol"]: s for s in stocks}
-symbols_meta = []
-for sym in available_syms:
-    m = sym_to_meta.get(sym, {"Company Name": sym, "Industry": "Unknown", "Symbol": sym})
-    symbols_meta.append({"symbol": sym, "name": m["Company Name"], "industry": m["Industry"]})
+# ── build symbols_meta: one entry per (symbol, industry) pair ────────────────
+#    Only include rows where the symbol has price data
+sym_to_name = {}
+for _, row in df.iterrows():
+    sym_to_name[row["Symbol"]] = row["Company Name"]   # last name wins (fine)
 
-industries = [m["industry"] for m in symbols_meta]
-ind_list   = sorted(set(industries))
+# Expand: for each available symbol, emit one entry per industry it belongs to
+sym_industry_rows = df[df["Symbol"].isin(available_sym_set)].copy()
+# sort so index aligns with the corr matrix order for the primary entry
+sym_industry_rows = sym_industry_rows.sort_values(["Symbol","Industry"])
+
+symbols_meta = []
+for _, row in sym_industry_rows.iterrows():
+    symbols_meta.append({
+        "symbol":   row["Symbol"],
+        "name":     row["Company Name"],
+        "industry": row["Industry"],
+    })
+
+# ── unique industry list ──────────────────────────────────────────────────────
+ind_list = sorted({m["industry"] for m in symbols_meta})
+
+# ── build a sym->index map for the corr matrix ───────────────────────────────
+sym_to_corr_idx = {sym: i for i, sym in enumerate(available_syms)}
 
 # ── block model parameters ────────────────────────────────────────────────────
+# Use the UNIQUE symbol corr matrix; industry grouping uses primary assignment
+# (first industry alphabetically per symbol)
+primary_industry = {}
+for m in symbols_meta:
+    sym = m["symbol"]
+    if sym not in primary_industry:
+        primary_industry[sym] = m["industry"]
+
 corr_arr   = corr.values.astype(float)
 rho_within = {}
 rho_cnt    = {}
@@ -135,8 +164,10 @@ for i in range(N):
         v = corr_arr[i, j]
         if np.isnan(v):
             continue
-        if industries[i] == industries[j]:
-            k             = industries[i]
+        ind_i = primary_industry.get(available_syms[i], "Unknown")
+        ind_j = primary_industry.get(available_syms[j], "Unknown")
+        if ind_i == ind_j:
+            k             = ind_i
             rho_within[k] = rho_within.get(k, 0.0) + v
             rho_cnt[k]    = rho_cnt.get(k, 0) + 1
         else:
@@ -174,6 +205,6 @@ with open(OUT_PATH, "w") as f:
 
 size_kb = os.path.getsize(OUT_PATH) / 1024
 print(f"Saved {OUT_PATH} ({size_kb:.0f} KB)")
-print(f"Stocks  : {N}")
+print(f"Stocks  : {N} unique symbols, {len(symbols_meta)} symbol-industry rows")
 print(f"Days    : {TARGET_DAYS} ({out['date_from']} to {out['date_to']})")
 print(f"rho_grand={rho_grand:.4f}  rho0={rho0:.4f}")
