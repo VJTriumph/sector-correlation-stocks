@@ -5,14 +5,26 @@ on:
     # Runs every weekday at 06:30 UTC (12:00 IST) after NSE closes
     - cron: "30 6 * * 1-5"
   workflow_dispatch:     # allow manual trigger from Actions tab
+    inputs:
+      period:
+        description: "Trading-day lookback period"
+        required: false
+        default: "252"
+        type: choice
+        options:
+          - "252"
+          - "128"
+          - "90"
+          - "65"
+          - "30"
   push:
     branches: [main]
     paths:
       - "fetch_data.py"
-      - "data/ind_nifty500list (1).csv"
+      - "data/stocks.csv"
 
 permissions:
-  contents: write        # needed to commit corr_data.json back to repo
+  contents: write   # needed to commit corr_data.json back to repo
 
 jobs:
   build:
@@ -37,12 +49,14 @@ jobs:
 
       # 4. Run the fetch script
       - name: Run fetch_data.py
+        env:
+          TRADING_PERIOD: ${{ github.event.inputs.period || '252' }}
         run: python fetch_data.py
 
       # 5. Commit the generated data file back to the repo
       - name: Commit corr_data.json
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/corr_data.json
           git diff --staged --quiet || git commit -m "chore: update corr_data.json [skip ci]"
