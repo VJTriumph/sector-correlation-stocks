@@ -66,7 +66,7 @@ select{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:5px 8px
 <header>
   <h1>&#9632; Nifty 500 Correlation Matrix Dashboard</h1>
   <span class="badge badge-blue">NIFTY 500</span>
-  <span class="badge badge-green">1-Year Returns</span>
+  <span class="badge badge-green" id="period-badge">Loading...</span>
   <span class="badge badge-grey" id="data-age">&#8635; loading...</span>
 </header>
 
@@ -153,7 +153,7 @@ select{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:5px 8px
 
 <script>
 // ── config ───────────────────────────────────────────────────────────────
-const DATA_URL = 'https://raw.githubusercontent.com/VJTriumph/correlation-matrix/main/data/corr_data.json';
+const DATA_URL = 'https://raw.githubusercontent.com/VJTriumph/sector-correlation-stocks/main/data/corr_data.json';
 
 const IND_COLORS = [
   '#1f6feb','#3fb950','#f85149','#d29922','#a371f7','#39d353',
@@ -371,7 +371,9 @@ async function loadData(){
     $('s-range').textContent = (DATA.date_from??'-') + ' → ' + (DATA.date_to??'-');
     $('s-gen').textContent = DATA.generated_at?.replace('T',' ')??'-';
     $('s-k').textContent   = DATA.industry_list?.length??'-';
-    $('data-age').textContent = '&#8635; ' + (DATA.generated_at?.slice(0,10)??'?');
+    $('data-age').textContent = '\u21bb ' + (DATA.generated_at?.slice(0,10)??'?');
+    const periodLabels = {'30':'1-Month Returns','65':'3-Month Returns','90':'4-Month Returns','128':'6-Month Returns','252':'1-Year Returns'};
+    $('period-badge').textContent = periodLabels[String(DATA.trading_days)] || (DATA.trading_days + '-Day Returns');
 
     // populate industry filter
     const sel=$('indFilter');
