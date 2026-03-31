@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nifty 500 Correlation Matrix Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:1.25rem;font-weight:700;color:#f0f6fc}
+.badge{padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600}
+.badge-blue{background:#1f6feb;color:#fff}
+.badge-green{background:#238636;color:#fff}
+.badge-grey{background:#30363d;color:#8b949e;border:1px solid #444}
+.controls{background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ctl-group{display:flex;align-items:center;gap:6px}
+.ctl-group label{font-size:.8rem;color:#8b949e;white-space:nowrap}
+select{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:5px 8px;border-radius:6px;font-size:.8rem;cursor:pointer}
+.btn{padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;border:none;transition:opacity .15s}
+.btn-green{background:#238636;color:#fff}.btn-green:hover{opacity:.85}
+.btn-grey{background:#21262d;color:#e6edf3;border:1px solid #30363d}.btn-grey:hover{background:#30363d}
+.model-tabs{display:flex;gap:6px}
+.mtab{padding:4px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;border:1px solid #30363d;background:#21262d;color:#8b949e;transition:all .15s}
+.mtab.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+#statusbar{padding:5px 20px;font-size:.75rem;color:#8b949e;background:#0d1117;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:10px}
+#progressbar{height:2px;background:#21262d}
+#progressfill{height:2px;background:#1f6feb;width:0%;transition:width .3s}
+.layout{display:grid;grid-template-columns:1fr 280px;height:calc(100vh - 120px)}
+#heatmap-wrap{padding:12px;overflow:hidden}
+.sidebar{background:#161b22;border-left:1px solid #30363d;padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.card{background:#21262d;border:1px solid #30363d;border-radius:8px;padding:12px}
+.card-title{font-size:.72rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #30363d;font-size:.78rem}
+.stat-row:last-child{border-bottom:none}
+.sv{font-weight:700;color:#58a6ff}
+.sv.pos{color:#3fb950}.sv.neg{color:#f85149}
+.ind-table{width:100%;border-collapse:collapse;font-size:.74rem}
+.ind-table th{color:#8b949e;padding:3px 5px;border-bottom:1px solid #30363d;text-align:left}
+.ind-table td{padding:3px 5px;border-bottom:1px solid #21262d}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+#overlay{position:fixed;inset:0;background:rgba(13,17,23,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:14px}
+#overlay h2{font-size:1.1rem;color:#f0f6fc}
+#overlay p{font-size:.85rem;color:#8b949e;max-width:380px;text-align:center;line-height:1.5}
+.spinner{width:36px;height:36px;border:3px solid #30363d;border-top-color:#1f6feb;border-radius:50%;animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#overlay-bar-wrap{width:280px;height:5px;background:#30363d;border-radius:3px}
+#overlay-bar{height:5px;background:#1f6feb;border-radius:3px;width:0%;transition:width .3s}
+.error-box{background:#3d1f1f;border:1px solid #f85149;border-radius:8px;padding:16px;max-width:440px;text-align:center}
+.error-box h3{color:#f85149;margin-bottom:8px}
+.error-box p{font-size:.82rem;color:#e6edf3;line-height:1.6}
+@media(max-width:860px){.layout{grid-template-columns:1fr}.sidebar{border-left:none;border-top:1px solid #30363d;height:auto}}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="overlay">
+  <div class="spinner"></div>
+  <h2>Nifty 500 Correlation Dashboard</h2>
+  <p id="overlay-msg">Loading pre-computed correlation data...</p>
+  <div id="overlay-bar-wrap"><div id="overlay-bar"></div></div>
+</div>
+
+<header>
+  <h1>&#9632; Nifty 500 Correlation Matrix Dashboard</h1>
+  <span class="badge badge-blue">NIFTY 500</span>
+  <span class="badge badge-green">1-Year Returns</span>
+  <span class="badge badge-grey" id="data-age">&#8635; loading...</span>
+</header>
+
+<div class="controls">
+  <div class="ctl-group">
+    <label>Model:</label>
+    <div class="model-tabs" id="modelTabs">
+      <div class="mtab active" data-m="full">Full Sample</div>
+      <div class="mtab" data-m="equi">Equicorrelation</div>
+      <div class="mtab" data-m="block">Block Industry</div>
+    </div>
+  </div>
+  <div class="ctl-group"><label>Sort:</label>
+    <select id="sortBy">
+      <option value="industry">By Industry</option>
+      <option value="alpha">A → Z</option>
+      <option value="avgcorr">Avg Corr ↓</option>
+    </select>
+  </div>
+  <div class="ctl-group"><label>Industry:</label>
+    <select id="indFilter"><option value="">All</option></select>
+  </div>
+  <div class="ctl-group"><label>Show max:</label>
+    <select id="maxN">
+      <option value="50">50 stocks</option>
+      <option value="100" selected>100 stocks</option>
+      <option value="200">200 stocks</option>
+      <option value="9999">All</option>
+    </select>
+  </div>
+  <button class="btn btn-grey" id="exportBtn">&#8595; Export CSV</button>
+</div>
+
+<div id="statusbar">
+  <span id="status-txt">Ready</span>
+</div>
+<div id="progressbar"><div id="progressfill"></div></div>
+
+<div class="layout">
+  <div id="heatmap-wrap"><div id="heatmap" style="width:100%;height:100%"></div></div>
+  <div class="sidebar">
+
+    <div class="card">
+      <div class="card-title">Dataset</div>
+      <div class="stat-row"><span>Stocks with data</span><span class="sv" id="s-n">-</span></div>
+      <div class="stat-row"><span>Trading days</span><span class="sv" id="s-days">-</span></div>
+      <div class="stat-row"><span>Date range</span><span class="sv" style="font-size:.7rem" id="s-range">-</span></div>
+      <div class="stat-row"><span>Generated (UTC)</span><span class="sv" style="font-size:.7rem" id="s-gen">-</span></div>
+      <div class="stat-row"><span>Industries</span><span class="sv" id="s-k">-</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Correlation Stats</div>
+      <div class="stat-row"><span>Grand avg &#961;</span><span class="sv" id="s-rho">-</span></div>
+      <div class="stat-row"><span>Within-industry avg</span><span class="sv pos" id="s-rhoW">-</span></div>
+      <div class="stat-row"><span>Cross-industry avg &#961;&#8320;</span><span class="sv" id="s-rho0">-</span></div>
+      <div class="stat-row"><span>Max pair</span><span class="sv pos" id="s-max">-</span></div>
+      <div class="stat-row"><span>Min pair</span><span class="sv neg" id="s-min">-</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Parameter Reduction</div>
+      <div class="stat-row"><span>Full matrix (N&#xB2;/2)</span><span class="sv" id="p-full">-</span></div>
+      <div class="stat-row"><span>Equicorrelation</span><span class="sv pos">1</span></div>
+      <div class="stat-row"><span>Block model (K+1)</span><span class="sv pos" id="p-block">-</span></div>
+      <div class="stat-row"><span>Reduction factor</span><span class="sv" id="p-factor">-</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Industry &#961; (Block Model)</div>
+      <div style="overflow-x:auto;max-height:260px;overflow-y:auto">
+        <table class="ind-table"><thead><tr><th>Industry</th><th>N</th><th>&#961; within</th></tr></thead>
+        <tbody id="ind-tbody"></tbody></table>
+      </div>
+    </div>
+
+    <div class="card" style="font-size:.72rem;color:#8b949e;line-height:1.6">
+      <div class="card-title">How it works</div>
+      Data is fetched by a Python script (fetch_data.py) running on GitHub Actions every weekday at 12:00 IST. It downloads 1-year daily prices via yfinance, computes log-return correlations for all Nifty 500 stocks, and saves the result to data/corr_data.json in this repo. This dashboard loads that file — no live API calls.
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── config ───────────────────────────────────────────────────────────────
+const DATA_URL = 'https://raw.githubusercontent.com/VJTriumph/correlation-matrix/main/data/corr_data.json';
+
+const IND_COLORS = [
+  '#1f6feb','#3fb950','#f85149','#d29922','#a371f7','#39d353',
+  '#ff7b72','#ffa657','#79c0ff','#56d364','#e3b341','#c9d1d9',
+  '#8b949e','#58a6ff','#bc8cff','#f0883e','#7ee787','#ff6e96',
+  '#63e2b7','#ffbd33','#4ec9b0','#ce9178'
+];
+
+// ── state ────────────────────────────────────────────────────────────────
+let DATA = null;          // raw JSON from corr_data.json
+let indColors = {};
+let currentModel = 'full';
+
+// ── helpers ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function setOverlay(msg, pct){ $('overlay-msg').textContent = msg; $('overlay-bar').style.width = pct+'%'; }
+function setStatus(msg){ $('status-txt').textContent = msg; }
+function setProg(pct){ $('progressfill').style.width = pct+'%'; }
+
+// ── compute equicorrelation matrix from full matrix ───────────────────────
+function equiMatrix(syms, fullCorr){
+  const N = syms.length;
+  let sum=0, cnt=0;
+  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){ const v=fullCorr[i][j]; if(v!=null){ sum+=v; cnt++; } }
+  const rho = cnt>0 ? sum/cnt : 0;
+  return Array.from({length:N},(_,i)=>Array.from({length:N},(_,j)=> i===j?1:rho));
+}
+
+// ── compute block matrix from full matrix ─────────────────────────────────
+function blockMatrix(syms, inds, fullCorr){
+  const N = syms.length;
+  const rhoW={}, cntW={};
+  let rho0=0, cnt0=0;
+  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+    const v=fullCorr[i][j]; if(v==null) continue;
+    if(inds[i]===inds[j]){ rhoW[inds[i]]=(rhoW[inds[i]]||0)+v; cntW[inds[i]]=(cntW[inds[i]]||0)+1; }
+    else { rho0+=v; cnt0++; }
+  }
+  for(const k of Object.keys(rhoW)) rhoW[k]/=cntW[k];
+  rho0 = cnt0>0 ? rho0/cnt0 : 0;
+  const mat = Array.from({length:N},(_,i)=>Array.from({length:N},(_,j)=>{
+    if(i===j) return 1;
+    return inds[i]===inds[j] ? (rhoW[inds[i]]||0) : rho0;
+  }));
+  return {mat, rhoW, rho0, cntW};
+}
+
+// ── sort indices ──────────────────────────────────────────────────────────
+function sortIdx(syms, inds, avgCorr, by){
+  const idx = syms.map((_,i)=>i);
+  if(by==='industry') idx.sort((a,b)=>inds[a].localeCompare(inds[b])||syms[a].localeCompare(syms[b]));
+  else if(by==='alpha') idx.sort((a,b)=>syms[a].localeCompare(syms[b]));
+  else idx.sort((a,b)=>avgCorr[b]-avgCorr[a]);
+  return idx;
+}
+
+// ── draw heatmap ──────────────────────────────────────────────────────────
+function drawHeatmap(syms, inds, mat, title){
+  const N = syms.length;
+  const wrap = $('heatmap-wrap');
+  const W = wrap.clientWidth-24, H = wrap.clientHeight-24;
+
+  // industry boundary shapes
+  const shapes=[];
+  let prev=inds[0], si=0;
+  for(let i=1;i<=N;i++){
+    if(i===N||inds[i]!==prev){
+      if(i<N){
+        const v = i-0.5;
+        shapes.push({type:'line',x0:v,x1:v,y0:-0.5,y1:N-0.5,line:{color:'#f0f6fc44',width:1.2}});
+        shapes.push({type:'line',x0:-0.5,x1:N-0.5,y0:v,y1:v,line:{color:'#f0f6fc44',width:1.2}});
+      }
+      if(i<N){prev=inds[i];si=i;}
+    }
+  }
+
+  Plotly.react('heatmap',[{
+    type:'heatmap', z:mat, x:syms, y:syms,
+    colorscale:[
+      [0,'#7f0000'],[0.2,'#d73027'],[0.4,'#fdae61'],
+      [0.5,'#ffffbf'],
+      [0.6,'#74add1'],[0.8,'#4575b4'],[1,'#002060']
+    ],
+    zmin:-1, zmax:1,
+    colorbar:{title:'&#961;',thickness:12,len:.8,tickfont:{color:'#8b949e',size:10},titlefont:{color:'#8b949e'}},
+    hovertemplate:'<b>%{x}</b> vs <b>%{y}</b><br>&#961; = %{z:.4f}<extra></extra>',
+  }],{
+    title:{text:title,font:{color:'#f0f6fc',size:13}},
+    paper_bgcolor:'#0d1117', plot_bgcolor:'#0d1117',
+    xaxis:{showticklabels:N<=80,tickangle:-45,tickfont:{color:'#8b949e',size:N<=60?9:7},showgrid:false,zeroline:false},
+    yaxis:{showticklabels:N<=80,tickfont:{color:'#8b949e',size:N<=60?9:7},showgrid:false,zeroline:false,autorange:'reversed'},
+    margin:{l:N<=80?80:30,r:10,t:45,b:N<=80?80:30},
+    shapes, width:W, height:H
+  },{responsive:true,displayModeBar:true,modeBarButtonsToRemove:['lasso2d','select2d']});
+}
+
+// ── update sidebar stats ──────────────────────────────────────────────────
+function updateStats(syms, inds, fullCorr, blockRes){
+  const N = syms.length;
+  let sum=0,cnt=0,maxV=-2,minV=2,wSum=0,wCnt=0,cSum=0,cCnt=0;
+  for(let i=0;i<N;i++) for(let j=i+1;j<N;j++){
+    const v=fullCorr[i][j]; if(v==null)continue;
+    sum+=v;cnt++;
+    if(v>maxV)maxV=v; if(v<minV)minV=v;
+    if(inds[i]===inds[j]){wSum+=v;wCnt++;}else{cSum+=v;cCnt++;}
+  }
+  $('s-rho').textContent  = cnt ? (sum/cnt).toFixed(4) : '-';
+  $('s-rhoW').textContent = wCnt ? (wSum/wCnt).toFixed(4) : '-';
+  $('s-rho0').textContent = blockRes.rho0.toFixed(4);
+  $('s-max').textContent  = maxV > -2 ? maxV.toFixed(4) : '-';
+  $('s-min').textContent  = minV < 2  ? minV.toFixed(4) : '-';
+
+  const K = [...new Set(inds)].length;
+  $('p-full').textContent  = (N*(N-1)/2).toLocaleString();
+  $('p-block').textContent = K+1;
+  $('p-factor').textContent= Math.round(N*(N-1)/2/(K+1)).toLocaleString()+'×';
+
+  // industry table
+  const tbody = $('ind-tbody');
+  tbody.innerHTML='';
+  const indsUniq = [...new Set(inds)].sort();
+  const grandAvg = cnt ? sum/cnt : 0;
+  indsUniq.forEach(ind=>{
+    const rho = blockRes.rhoW[ind]??0;
+    const nStocks = syms.filter((_,i)=>inds[i]===ind).length;
+    const tr=document.createElement('tr');
+    const color=indColors[ind]||'#8b949e';
+    tr.innerHTML = `<td><span class="dot" style="background:${color}"></span>${ind.length>17?ind.slice(0,17)+'…':ind}</td>
+      <td>${nStocks}</td>
+      <td style="color:${rho>grandAvg?'#3fb950':'#f85149'}">${rho.toFixed(4)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── main render ───────────────────────────────────────────────────────────
+function render(){
+  if(!DATA) return;
+  const maxN    = parseInt($('maxN').value);
+  const filterI = $('indFilter').value;
+  const sortBy  = $('sortBy').value;
+
+  // filter subset
+  let subset = DATA.symbols.slice();
+  if(filterI) subset = subset.filter(s=>s.industry===filterI);
+  subset = subset.slice(0, maxN);
+
+  const N    = subset.length;
+  const syms = subset.map(s=>s.symbol);
+  const inds = subset.map(s=>s.industry);
+
+  // map from symbol → original index in DATA.symbols
+  const symIdx = {};
+  DATA.symbols.forEach((s,i)=>symIdx[s.symbol]=i);
+
+  // build N×N sub-matrix
+  const fullCorr = subset.map((_,ri)=>
+    subset.map((_,ci)=>{
+      const oi=symIdx[subset[ri].symbol], oj=symIdx[subset[ci].symbol];
+      return DATA.corr_matrix[oi]?.[oj]??null;
+    })
+  );
+
+  // avg corr per stock for sort
+  const avgCorr = syms.map((_,i)=>{
+    let s=0,c=0;
+    for(let j=0;j<N;j++) if(i!==j&&fullCorr[i][j]!=null){s+=fullCorr[i][j];c++;}
+    return c?s/c:0;
+  });
+
+  const idx = sortIdx(syms, inds, avgCorr, sortBy);
+  const sSyms  = idx.map(i=>syms[i]);
+  const sInds  = idx.map(i=>inds[i]);
+  const sMat   = idx.map(i=>idx.map(j=>fullCorr[i][j]));
+
+  // compute model matrix
+  const blockRes = blockMatrix(syms, inds, fullCorr);
+  let dispMat, title;
+  if(currentModel==='full'){
+    dispMat=sMat;
+    title=`Full Sample Correlation (${N} stocks, ${DATA.trading_days} days)`;
+  } else if(currentModel==='equi'){
+    const eq=equiMatrix(syms,fullCorr);
+    dispMat=idx.map(i=>idx.map(j=>eq[i][j]));
+    const rho=(()=>{let s=0,c=0;for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const v=fullCorr[i][j];if(v!=null){s+=v;c++;}}return c?s/c:0})();
+    title=`Equicorrelation Model — &#961; = ${rho.toFixed(4)} (1 parameter)`;
+  } else {
+    const blk=blockMatrix(syms,inds,fullCorr);
+    dispMat=idx.map(i=>idx.map(j=>blk.mat[i][j]));
+    const K=[...new Set(inds)].length;
+    title=`Block Industry Equicorrelation — K+1 = ${K+1} parameters`;
+  }
+
+  drawHeatmap(sSyms, sInds, dispMat, title);
+  updateStats(syms, inds, fullCorr, blockRes);
+  setProg(100);
+  setStatus(`Showing ${N} stocks · Model: ${currentModel} · Sorted by: ${sortBy} · Data: ${DATA.generated_at?.slice(0,10)}`);
+}
+
+// ── load data ─────────────────────────────────────────────────────────────
+async function loadData(){
+  setOverlay('Fetching corr_data.json from repo...', 10);
+  try {
+    const r = await fetch(DATA_URL + '?t=' + Date.now());
+    if(!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+    setOverlay('Parsing correlation data...', 60);
+    DATA = await r.json();
+
+    // assign industry colors
+    const inds = [...new Set(DATA.symbols.map(s=>s.industry))].sort();
+    inds.forEach((ind,i)=>indColors[ind]=IND_COLORS[i%IND_COLORS.length]);
+
+    // populate sidebar meta
+    $('s-n').textContent   = DATA.n_stocks;
+    $('s-days').textContent= DATA.trading_days;
+    $('s-range').textContent = (DATA.date_from??'-') + ' → ' + (DATA.date_to??'-');
+    $('s-gen').textContent = DATA.generated_at?.replace('T',' ')??'-';
+    $('s-k').textContent   = DATA.industry_list?.length??'-';
+    $('data-age').textContent = '&#8635; ' + (DATA.generated_at?.slice(0,10)??'?');
+
+    // populate industry filter
+    const sel=$('indFilter');
+    inds.forEach(ind=>{ const o=document.createElement('option');o.value=ind;o.textContent=ind;sel.appendChild(o);});
+
+    setOverlay('Rendering heatmap...', 85);
+    await new Promise(r=>setTimeout(r,50));
+    render();
+    $('overlay').style.display='none';
+
+  } catch(e){
+    $('overlay').innerHTML=`<div class="error-box">
+      <h3>&#9888; Could not load data</h3>
+      <p>${e.message}</p>
+      <p style="margin-top:10px">The GitHub Actions workflow may not have run yet.<br>
+      Go to <b>Actions</b> tab in the repo and click <b>Run workflow</b> manually,<br>
+      then refresh this page after ~3 minutes.</p>
+      <button onclick="location.reload()" style="margin-top:14px;padding:6px 16px;background:#238636;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">&#8635; Retry</button>
+    </div>`;
+  }
+}
+
+// ── wire events ──────────────────────────────────────────────────────────
+document.querySelectorAll('.mtab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.mtab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); currentModel=t.dataset.m; render();
+}));
+$('sortBy').addEventListener('change', render);
+$('indFilter').addEventListener('change', render);
+$('maxN').addEventListener('change', render);
+
+$('exportBtn').addEventListener('click',()=>{
+  if(!DATA)return;
+  const maxN=parseInt($('maxN').value);
+  const filterI=$('indFilter').value;
+  let subset=DATA.symbols.slice();
+  if(filterI) subset=subset.filter(s=>s.industry===filterI);
+  subset=subset.slice(0,maxN);
+  const symIdx={};
+  DATA.symbols.forEach((s,i)=>symIdx[s.symbol]=i);
+  const syms=subset.map(s=>s.symbol);
+  let csv='Symbol,'+syms.join(',')+'\n';
+  subset.forEach((s,ri)=>{
+    const row=subset.map((_,ci)=>{
+      const v=DATA.corr_matrix[symIdx[s.symbol]]?.[symIdx[subset[ci].symbol]];
+      return v!=null?v.toFixed(5):'';
+    });
+    csv+=s.symbol+','+row.join(',')+'\n';
+  });
+  const a=document.createElement('a');
+  a.href='data:text/csv,'+encodeURIComponent(csv);
+  a.download='nifty500_corr.csv'; a.click();
+});
+
+// ── init ──────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
