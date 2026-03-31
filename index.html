@@ -296,9 +296,11 @@ function render(){
   const sortBy  = $('sortBy').value;
 
   // filter subset
-  let subset = DATA.symbols.slice();
-  if(filterI) subset = subset.filter(s=>s.industry===filterI);
-  subset = subset.slice(0, maxN);
+  // When no industry filter, deduplicate by symbol (keep first occurrence = first industry)
+    let subset = filterI
+      ? DATA.symbols.filter(s=>s.industry===filterI)
+      : DATA.symbols.filter((s,i,arr)=>arr.findIndex(x=>x.symbol===s.symbol)===i);
+    subset = subset.slice(0, maxN);
 
   const N    = subset.length;
   const syms = subset.map(s=>s.symbol);
@@ -306,7 +308,9 @@ function render(){
 
   // map from symbol → original index in DATA.symbols
   const symIdx = {};
-  DATA.symbols.forEach((s,i)=>symIdx[s.symbol]=i);
+    // symbols may have repeated entries (multi-index membership).
+    // corr_matrix is indexed by unique symbols in first-seen order.
+    DATA.symbols.forEach((s)=>{ if(!(s.symbol in symIdx)) symIdx[s.symbol]=Object.keys(symIdx).length; });
 
   // build N×N sub-matrix
   const fullCorr = subset.map((_,ri)=>
