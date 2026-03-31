@@ -2,8 +2,8 @@ name: Fetch Nifty 500 Correlation Data
 
 on:
   schedule:
-    # Runs every weekday at 06:30 UTC (12:00 IST) after NSE closes
-    - cron: "30 6 * * 1-5"
+    # Runs every weekday at 13:30 UTC (7:00 PM IST) after NSE closes
+    - cron: "30 13 * * 1-5"
   workflow_dispatch:     # allow manual trigger from Actions tab
     inputs:
       period:
