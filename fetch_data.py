@@ -66,7 +66,7 @@ tickers        = [s + ".NS" for s in unique_symbols]
 print(f"Loaded {len(df)} stock-industry rows, {len(unique_symbols)} unique symbols from CSV")
 
 # ── fetch prices ─────────────────────────────────────────────────────────────
-end   = datetime.today()
+end   = datetime.today() + timedelta(days=1)  # +1 so yfinance includes today (end is exclusive)
 start = end - timedelta(days=FETCH_DAYS)
 print(f"Downloading {len(tickers)} tickers ({start.date()} to {end.date()}) ...")
 
